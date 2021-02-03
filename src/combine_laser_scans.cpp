@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <mutex>
 
-#include <glog/logging.h>
 #include <tf/transform_listener.h>
 #include <ros/ros.h>
 #include <sensor_msgs/LaserScan.h>
@@ -126,8 +125,10 @@ class LaserScanCombiner {
       if ( kAssumeStaticTransform ) {
         // Find the transform between 1 and 2 if it is not known yet.
         if ( !tf_is_known_ ) {
-        LOG(INFO) << "Waiting for transform between scan 1 and scan 2 frames: " <<
-          reference_scan1_.header.frame_id << " " << reference_scan2_.header.frame_id;
+          ROS_INFO("Waiting for transform between scan 1 and scan 2 frames: %s %s",
+            reference_scan1_.header.frame_id.c_str(),
+		    reference_scan2_.header.frame_id.c_str()
+          );
           try {
             ros::Duration kTFWait = ros::Duration(0, 200*kMsToNs);
             tf_listener_.waitForTransform(reference_scan1_.header.frame_id, reference_scan2_.header.frame_id,
@@ -137,17 +138,16 @@ class LaserScanCombiner {
                                          reference_scan1_.header.stamp + kTFWait, tf_scan_1_to_scan_2_);
           }
           catch ( tf::TransformException &ex ) {
-            LOG(ERROR) << "Error while looking up transform between scan 1 and scan 2 : " <<
-              ex.what();
+            ROS_ERROR("Error while looking up transform between scan 1 and scan 2 : %s", ex.what());
             return true;
           }
           tf_is_known_ = true;
-          LOG(INFO) << "Transform found.";
+          ROS_INFO("Transform found.");
           return true;
         }
       } else {
-        LOG(ERROR) << "Dynamic transforms are not implemented.";
-        ros::shutdown;
+        ROS_ERROR("Dynamic transforms are not implemented.");
+        ros::shutdown();
       }
       return false;
     }
@@ -173,13 +173,13 @@ class LaserScanCombiner {
 
     /// \brief receives scan 1 messages
     void scan1Callback(const sensor_msgs::LaserScan::ConstPtr& msg) {
-      VLOG(3) << "scan1callback";
+      ROS_INFO("scan1callback");
 
       // On first run, only set reference scan.
       if ( !reference_scan1_is_set_ ) {
         reference_scan1_ = *msg;
         reference_scan1_is_set_ = true;
-        LOG(INFO) << "First scan set as reference scan for sensor 1.";
+        ROS_INFO("First scan set as reference scan for sensor 1.");
         return;
       }
 
@@ -195,13 +195,13 @@ class LaserScanCombiner {
       // as the new scan has n times the resolution, and both start with the same angle,
       // this should be equivalent to mapping original values to every other cell in the new scan.
       // (except for the last part, where no values exist in the original scan)
-      CHECK( combined_scan.angle_min == msg->angle_min ); // sanity check
+      // FIXME: CHECK( combined_scan.angle_min == msg->angle_min ); // sanity check
       for ( size_t i = 0; i < msg->ranges.size(); i++ ) {
         combined_scan.ranges.at(i*kResolutionUpsampling) = msg->ranges.at(i);
         combined_scan.intensities.at(i*kResolutionUpsampling) = msg->intensities.at(i);
       }
 
-      VLOG(3) << "";
+      ROS_INFO(" ");
       // publish result.
       latest_published_scan_ = combined_scan;
       latest_published_scan_is_set_ = true;
@@ -210,13 +210,13 @@ class LaserScanCombiner {
 
     /// \brief receives scan 2 messages
     void scan2Callback(const sensor_msgs::PointCloud2::ConstPtr& msg) {
-      VLOG(3) << "scan2callback";
+      ROS_INFO("scan2callback");
 
       // On first run, only set reference scan.
       if ( !reference_scan2_is_set_ ) {
         reference_scan2_ = *msg;
         reference_scan2_is_set_ = true;
-        LOG(INFO) << "First scan set as reference scan for sensor 2.";
+        ROS_INFO("First scan set as reference scan for sensor 2.");
         return;
       }
 
@@ -239,7 +239,7 @@ class LaserScanCombiner {
       bool found_intensities = false;
       std::vector<float> scan2_intensities;
       try {
-        VLOG(3) << "";
+        ROS_INFO(" ");
         for ( size_t i = 0; i < scan2_in_frame1_xyzi.channels.size(); i++ ) {
           if ( scan2_in_frame1_xyzi.channels.at(i).name == "intensity" ) {
             scan2_intensities = scan2_in_frame1_xyzi.channels.at(i).values;
@@ -247,11 +247,11 @@ class LaserScanCombiner {
               found_intensities = true;
               break;
             }
-            LOG(ERROR) << "In scan 2 cloud, mismatch between intensity and points array sizes.";
+            ROS_ERROR("In scan 2 cloud, mismatch between intensity and points array sizes.");
           }
         }
       } catch (const std::exception& e) {
-        LOG(ERROR) << "Could not find intensities for scan 2 cloud: " << e.what();
+        ROS_ERROR("Could not find intensities for scan 2 cloud: %s", e.what());
       }
 
       // Fill in values from scan 2
@@ -261,7 +261,7 @@ class LaserScanCombiner {
         float angle = atan2(p.y, p.x);
         float range = sqrt(p.y * p.y + p.x * p.x);
         // find the index in combined_scan corresponding to that angle.
-      VLOG(3) << "";
+      ROS_INFO(" ");
         float relative_angle = angle - combined_scan.angle_min;
         // constrain relative angle to [0, 2pi[
         if ( abs(relative_angle) >= 2*M_PI ) {
@@ -273,17 +273,17 @@ class LaserScanCombiner {
         if ( relative_angle > 0 && combined_scan.angle_increment < 0 ) {
           relative_angle -= 2*M_PI;
         }
-        CHECK( ( relative_angle / combined_scan.angle_increment )  >= 0 );
+        // FIXME: CHECK( ( relative_angle / combined_scan.angle_increment )  >= 0 );
         size_t index = round(relative_angle / combined_scan.angle_increment);
         if ( index == combined_scan.ranges.size() ) {
           index = 0;
         }
-        VLOG(2) << "angle: " << angle;
-        VLOG(2) << "min angle: " << combined_scan.angle_min;
-        VLOG(2) << "max angle: " << combined_scan.angle_max;
-        VLOG(2) << "angle inc: " << combined_scan.angle_increment;
-        VLOG(2) << "rel angle: " << relative_angle;
-        VLOG(2) << "index: " << index;
+        ROS_INFO("angle: %4.5f", angle);
+        ROS_INFO("min angle: %4.5f", combined_scan.angle_min);
+        ROS_INFO("max angle: %4.5f", combined_scan.angle_max);
+        ROS_INFO("angle inc: %4.5f", combined_scan.angle_increment);
+        ROS_INFO("rel angle: %4.5f", relative_angle);
+        ROS_INFO("index: %lu", index);
         combined_scan.ranges.at(index) = range;
         if ( found_intensities ) {
           combined_scan.intensities.at(index) = scan2_intensities.at(i);

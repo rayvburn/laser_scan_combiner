@@ -3,12 +3,34 @@ project(laser_scan_combiner)
 
 add_definitions(-std=c++11)
 
-find_package(catkin_simple 0.1.0 REQUIRED)
-catkin_simple(ALL_DEPS_REQUIRED)
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  tf
+  pcl_ros
+  sensor_msgs
+)
 
-cs_add_executable(combine_laser_scans src/combine_laser_scans.cpp)
+catkin_package(
+  CATKIN_DEPENDS roscpp tf pcl_ros sensor_msgs
+)
 
-#add_doxygen(REQUIRED)
+include_directories(
+  ${catkin_INCLUDE_DIRS}
+)
 
-cs_install()
-cs_export()
+add_executable(combine_laser_scans src/combine_laser_scans.cpp)
+
+target_link_libraries(combine_laser_scans
+  ${catkin_LIBRARIES}
+)
+
+install(TARGETS combine_laser_scans 
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+install(DIRECTORY launch
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)
+
